@@ -1,0 +1,505 @@
+<title>Daily Games Scorecard</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: a scorecard. Sticky day total on top, games grouped by tier rows (S→D) like the tier list, history strip below. */
+:root {
+  --bg: #f3f4f8;
+  --surface: #ffffff;
+  --sunk: #e9ebf2;
+  --fg: #171a24;
+  --muted: #5d6273;
+  --line: #d8dbe6;
+  --accent: #3b4bd8;
+  --accent-ink: #ffffff;
+  --good: #1f8a4c;
+  --bad: #c2413a;
+  --tier-s: #ee8a8a; --tier-a: #f3bf86; --tier-b: #f1dc84; --tier-c: #b9e886; --tier-d: #8fc0ee; --tier-x: #c9c4e8;
+  --tier-ink: #1b1b1f;
+  --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1117; --surface: #181b24; --sunk: #12141b; --fg: #eceef5; --muted: #9aa0b4; --line: #2a2e3b;
+  --accent: #8b97ff; --accent-ink: #0f1117; --good: #4fd18a; --bad: #ff7d74; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0f1117; --surface: #181b24; --sunk: #12141b; --fg: #eceef5; --muted: #9aa0b4; --line: #2a2e3b;
+  --accent: #8b97ff; --accent-ink: #0f1117; --good: #4fd18a; --bad: #ff7d74; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+/* Top bar */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top .wrap { padding-block: 14px; display: grid; gap: 12px; }
+.row1 { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { font-family: var(--f-display); font-weight: 800; font-size: 1.25rem; letter-spacing: -0.01em; margin: 0; }
+.daynav { display: flex; align-items: center; gap: 6px; }
+.daynav button { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; height: 34px; min-width: 34px; padding: 0 10px; }
+.daynav .label { font-weight: 600; min-width: 9.5em; text-align: center; }
+.score { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; align-items: end; }
+.big { font-family: var(--f-display); font-weight: 800; font-size: clamp(2.4rem, 8vw, 3.2rem); line-height: 0.9; letter-spacing: -0.03em; }
+.big small { font-family: var(--f-mono); font-size: 0.9rem; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+.meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 0.85rem; justify-content: flex-end; }
+.meta b { color: var(--fg); font-family: var(--f-mono); }
+.bar { grid-column: 1 / -1; height: 10px; border-radius: 99px; background: var(--sunk); overflow: hidden; display: flex; }
+.bar span { display: block; height: 100%; }
+
+/* Filters */
+.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; padding-block: 18px 6px; }
+.seg { display: inline-flex; background: var(--sunk); border-radius: 10px; padding: 3px; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 8px; font-size: 0.88rem; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.ghost { border: 1px solid var(--line); background: transparent; padding: 7px 12px; border-radius: 10px; font-size: 0.88rem; }
+
+/* Tier rows */
+.tier { display: grid; grid-template-columns: 52px 1fr; margin-top: 14px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); }
+.tier-tag { display: grid; place-items: center; font-family: var(--f-display); font-weight: 800; font-size: 1.7rem; color: var(--tier-ink); }
+.tier-body { display: grid; min-width: 0; }
+.game { border-top: 1px solid var(--line); min-width: 0; }
+.game:first-child { border-top: 0; }
+.ghead { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 12px 14px; }
+.gname { font-weight: 600; font-size: 1rem; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.ghint { font-size: 0.8rem; color: var(--muted); font-weight: 400; }
+.gact { display: flex; gap: 6px; align-items: center; }
+.play { text-decoration: none; background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 0.85rem; padding: 7px 12px; border-radius: 8px; white-space: nowrap; }
+.play.find { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.pill { font-family: var(--f-mono); font-size: 0.85rem; font-weight: 700; min-width: 56px; text-align: center; padding: 6px 8px; border-radius: 8px; border: 1px dashed var(--line); color: var(--muted); background: transparent; }
+.pill.done { border: 1px solid transparent; background: var(--sunk); color: var(--fg); }
+.pill.done.hi { color: var(--good); }
+.pill.done.lo { color: var(--bad); }
+.panel { padding: 4px 14px 14px; display: grid; gap: 10px; }
+.panel label { font-size: 0.8rem; color: var(--muted); display: grid; gap: 4px; }
+.panel textarea, .panel input, .panel select { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+.panel textarea { min-height: 76px; font-family: var(--f-mono); font-size: 0.8rem; resize: vertical; }
+.prow { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+.prow > * { flex: 1 1 140px; min-width: 0; }
+.btn { border: 0; background: var(--accent); color: var(--accent-ink); font-weight: 600; padding: 9px 14px; border-radius: 8px; }
+.btn.sec { background: var(--sunk); color: var(--fg); }
+.btn.warn { background: transparent; color: var(--bad); border: 1px solid var(--line); }
+.note { font-size: 0.82rem; color: var(--muted); }
+.note.ok { color: var(--good); }
+.note.err { color: var(--bad); }
+details.cfg summary { cursor: pointer; font-size: 0.82rem; color: var(--muted); }
+details.cfg[open] summary { margin-bottom: 8px; }
+
+/* History */
+h2 { font-family: var(--f-display); font-weight: 700; font-size: 1.2rem; margin: 34px 0 8px; letter-spacing: -0.01em; text-wrap: balance; }
+.hist { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; overflow-x: auto; }
+.hist svg { display: block; width: 100%; min-width: 520px; height: auto; }
+.hist text { fill: var(--muted); font-family: var(--f-mono); font-size: 10px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.stat .k { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.stat .v { font-family: var(--f-display); font-weight: 800; font-size: 1.5rem; }
+.footer { padding-block: 24px 48px; color: var(--muted); font-size: 0.82rem; display: grid; gap: 10px; }
+.data { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.data textarea { width: 100%; min-height: 90px; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px; font-family: var(--f-mono); font-size: 0.75rem; }
+@media (max-width: 520px) {
+  .score { grid-template-columns: 1fr; }
+  .meta { justify-content: flex-start; }
+  .tier { grid-template-columns: 36px 1fr; }
+  .tier-tag { font-size: 1.3rem; }
+  .ghead { grid-template-columns: 1fr; }
+  .gact { justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: no-preference) { .bar span { transition: width .4s ease; } }
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="row1">
+      <h1 class="brand">Daily Games Scorecard</h1>
+      <div class="daynav">
+        <button id="prevDay" aria-label="Previous day">‹</button>
+        <span class="label" id="dayLabel">Today</span>
+        <button id="nextDay" aria-label="Next day">›</button>
+        <button id="todayBtn">Today</button>
+      </div>
+    </div>
+    <div class="score">
+      <div class="big mono" id="total">0<small>/ 0</small></div>
+      <div class="meta">
+        <span>Played <b id="played">0/0</b></span>
+        <span>Average <b id="avg">–</b></span>
+        <span>Streak <b id="streak">0</b> <span id="streakUnit">days</span></span>
+      </div>
+      <div class="bar" id="bar" aria-hidden="true"></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="tools">
+    <div class="seg" role="group" aria-label="Filter games">
+      <button data-filter="all" aria-pressed="true">All</button>
+      <button data-filter="todo" aria-pressed="false">To play</button>
+      <button data-filter="done" aria-pressed="false">Done</button>
+    </div>
+    <button class="ghost" id="addGameBtn">+ Add a game</button>
+  </div>
+  <div id="addGame" class="data" hidden style="margin-top:8px">
+    <div class="prow">
+      <label class="note" style="display:grid;gap:4px">Name<input id="newName" placeholder="e.g. Costcodle"></label>
+      <label class="note" style="display:grid;gap:4px">Link<input id="newUrl" placeholder="https://…"></label>
+      <label class="note" style="display:grid;gap:4px">Tier<select id="newTier"><option>S</option><option>A</option><option selected>B</option><option>C</option><option>D</option></select></label>
+    </div>
+    <div class="prow"><button class="btn" id="newSave">Add game</button><button class="btn sec" id="newCancel">Cancel</button></div>
+  </div>
+  <div id="tiers"></div>
+
+  <h2>Last 14 days</h2>
+  <div class="hist" id="hist"></div>
+  <div class="stats" id="stats"></div>
+
+  <div class="footer">
+    <p>Each game scores 0 to 100, so a perfect day is 100 × the number of games you have on. Open a game with its button, then paste its share text or type your result. You can change a game's link and scoring under “Link & scoring”. Results are saved in this browser only.</p>
+    <details class="cfg">
+      <summary>Back up or move your data</summary>
+      <div class="data">
+        <div class="prow"><button class="btn sec" id="exportBtn">Copy backup</button><button class="btn sec" id="importBtn">Restore from text below</button><button class="btn warn" id="resetBtn">Reset everything</button></div>
+        <textarea id="dataBox" placeholder="Your backup text appears here. To restore, paste a backup and press Restore."></textarea>
+        <span class="note" id="dataNote"></span>
+      </div>
+    </details>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  // ---------- Scoring models ----------
+  // Every game turns into 0–100 points.
+  const TYPES = {
+    guesses: { label: "Guesses (fewer is better, with a limit)", hint: (g) => `${g.max} tries`,
+      input: "Guesses used (X if failed)",
+      score: (v, g) => v === "X" ? 0 : clamp(Math.round(100 * (g.max - v + 1) / g.max)),
+      parse: (t, g) => { const m = t.match(/\b([1-9]\d?|X)\s*\/\s*(\d{1,2})\b/i); return m ? (m[1].toUpperCase() === "X" ? "X" : +m[1]) : null; },
+      read: (s) => { s = String(s).trim().toUpperCase(); if (s === "X") return "X"; const n = parseInt(s, 10); return n > 0 ? n : null; },
+      show: (v, g) => `${v}/${g.max}` },
+    mistakes: { label: "Mistakes (fewer is better)", hint: (g) => `${g.max} mistakes allowed`,
+      input: "Mistakes made (max = failed)",
+      score: (v, g) => clamp(Math.round(100 * (1 - v / g.max))),
+      parse: (t, g) => parseColorGrid(t, g),
+      read: (s) => { const n = parseInt(s, 10); return n >= 0 ? n : null; },
+      show: (v, g) => v >= g.max ? "failed" : `${v} mistake${v === 1 ? "" : "s"}` },
+    points: { label: "Points (higher is better)", hint: (g) => `out of ${g.max}`,
+      input: "Points scored",
+      score: (v, g) => clamp(Math.round(100 * v / g.max)),
+      parse: (t, g) => { let m = t.match(/(\d[\d,]*)\s*\/\s*(\d[\d,]*)/); if (m) return num(m[1]);
+        m = t.match(/(\d[\d,]*)\s*(pts|points|score|m\b|meters)/i) || t.match(/(score|total)\D{0,6}(\d[\d,]*)/i);
+        return m ? num(/\d/.test(m[1]) ? m[1] : m[2]) : null; },
+      read: (s) => { const n = num(s); return n >= 0 ? n : null; },
+      show: (v, g) => `${v}/${g.max}` },
+    lower: { label: "Count (fewer is better, no limit)", hint: (g) => `${g.max} or fewer = 100`,
+      input: "Guesses / strokes used",
+      score: (v, g) => clamp(Math.round(100 * g.max / Math.max(v, g.max))),
+      parse: (t) => { const m = t.match(/(\d+)\s*(guess|guesses|tries|strokes|shots)/i) || t.match(/(?:in|took)\s+(\d+)/i); return m ? +m[1] : null; },
+      read: (s) => { const n = parseInt(s, 10); return n > 0 ? n : null; },
+      show: (v) => `${v}` },
+    percent: { label: "Percent (you rate it 0–100)", hint: () => "0–100%",
+      input: "Score in %",
+      score: (v) => clamp(Math.round(v)),
+      parse: (t) => { const m = t.match(/(\d{1,3}(?:\.\d+)?)\s*%/); return m ? +m[1] : null; },
+      read: (s) => { const n = parseFloat(s); return n >= 0 ? Math.min(100, n) : null; },
+      show: (v) => `${v}%` },
+    win: { label: "Solved or not", hint: () => "solved = 100",
+      input: "Result",
+      score: (v) => v ? 100 : 0,
+      parse: (t) => /fail|lost|❌|x\/\d/i.test(t) ? 0 : (t.trim() ? 1 : null),
+      read: (s) => /^(1|y|yes|solved|win|won)$/i.test(String(s).trim()) ? 1 : (/^(0|n|no|fail|failed|lost)$/i.test(String(s).trim()) ? 0 : null),
+      show: (v) => v ? "solved" : "failed" },
+  };
+  function clamp(n) { return Math.max(0, Math.min(100, n)); }
+  function num(s) { return parseFloat(String(s).replace(/,/g, "")); }
+  // Connections-style grid: rows of 4 coloured squares. A row with one colour is a solved group.
+  function parseColorGrid(t, g) {
+    const sq = new Set(["🟨", "🟩", "🟦", "🟪", "🟧", "🟥", "⬛", "⬜", "🟫"]);
+    let rows = 0, solved = 0;
+    for (const line of t.split(/\n/)) {
+      const cells = Array.from(line).filter((c) => sq.has(c));
+      if (cells.length !== 4) continue;
+      rows++; if (cells.every((c) => c === cells[0])) solved++;
+    }
+    if (!rows) { const m = t.match(/(\d)\s*mistake/i); return m ? +m[1] : null; }
+    if (solved < 4) return g.max;
+    return Math.min(g.max, rows - solved);
+  }
+
+  // ---------- Games (from the tier list) ----------
+  // Links marked null are opened through a web search until you set the real address.
+  const DEFAULT_GAMES = [
+    ["kabloom", "Kabloom", "S", null, "percent", 100],
+    ["farflung", "Farflung", "S", null, "guesses", 6],
+    ["krillion", "Krillion", "A", "https://krillion.io", "points", 700],
+    ["noillirk", "Noillirk", "A", null, "points", 700],
+    ["dailyholes", "Daily Holes", "A", null, "lower", 9],
+    ["peakle", "Peakle", "A", null, "guesses", 6],
+    ["whosmorefamous", "Who's More Famous?", "A", null, "percent", 100],
+    ["dailygeo", "Daily Geo", "A", null, "percent", 100],
+    ["connections", "Connections", "A", "https://www.nytimes.com/games/connections", "mistakes", 4],
+    ["poople", "Poople", "A", null, "percent", 100],
+    ["flagle", "Flagle", "A", "https://www.flagle.io", "guesses", 6],
+    ["travle", "Travle", "B", "https://travle.earth", "lower", 6],
+    ["worldle", "Worldle", "B", "https://worldle.teuteuf.fr", "guesses", 6],
+    ["chainle", "Chainle", "B", null, "percent", 100],
+    ["originle", "Originle", "B", null, "guesses", 6],
+    ["globle", "Globle", "C", "https://globle-game.com", "lower", 5],
+    ["filmlink", "FilmLink", "C", null, "percent", 100],
+    ["geoslice", "GeoSlice", "C", null, "guesses", 6],
+    ["magnitudle", "Magnitudle", "C", null, "guesses", 6],
+    ["wordle", "Wordle", "D", "https://www.nytimes.com/games/wordle/index.html", "guesses", 6],
+    ["letterboxdle", "Letterboxdle", "D", null, "guesses", 6],
+  ].map(([id, name, tier, url, type, max]) => ({ id, name, tier, url, type, max, on: true }));
+  const TIERS = ["S", "A", "B", "C", "D"];
+
+  // ---------- Storage ----------
+  const KEY = "dailyGamesScorecard.v1";
+  function load() {
+    try { const raw = localStorage.getItem(KEY); if (raw) return JSON.parse(raw); } catch (e) {}
+    return null;
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+  let state = load() || { games: {}, custom: [], results: {} };
+  state.games = state.games || {}; state.custom = state.custom || []; state.results = state.results || {};
+
+  function games() {
+    return DEFAULT_GAMES.concat(state.custom).map((g) => Object.assign({}, g, state.games[g.id] || {}));
+  }
+  function activeGames() { return games().filter((g) => g.on !== false); }
+
+  // ---------- Dates ----------
+  function keyOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+  function fromKey(k) { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d); }
+  function addDays(k, n) { const d = fromKey(k); d.setDate(d.getDate() + n); return keyOf(d); }
+  const todayKey = () => keyOf(new Date());
+  let day = todayKey();
+  let filter = "all";
+  const openPanels = new Set();
+
+  function scoreOf(g, r) { if (!r) return null; const t = TYPES[g.type] || TYPES.percent; return t.score(r.v, g); }
+  function dayTotal(k) {
+    const res = state.results[k] || {}; let total = 0, played = 0;
+    for (const g of activeGames()) { const s = scoreOf(g, res[g.id]); if (s !== null) { total += s; played++; } }
+    return { total, played, max: activeGames().length * 100 };
+  }
+  function streak() {
+    let k = todayKey(), n = 0;
+    if (!dayTotal(k).played) k = addDays(k, -1);
+    while (dayTotal(k).played) { n++; k = addDays(k, -1); }
+    return n;
+  }
+
+  // ---------- Render ----------
+  const $ = (id) => document.getElementById(id);
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  function linkFor(g) { return g.url || `https://www.google.com/search?q=${encodeURIComponent(g.name + " daily game")}`; }
+  const tierVar = (t) => `var(--tier-${TIERS.includes(t) ? t.toLowerCase() : "x"})`;
+
+  function renderHeader() {
+    const t = dayTotal(day);
+    $("total").innerHTML = `${t.total}<small>/ ${t.max}</small>`;
+    $("played").textContent = `${t.played}/${activeGames().length}`;
+    $("avg").textContent = t.played ? Math.round(t.total / t.played) : "–";
+    const st = streak(); $("streak").textContent = st; $("streakUnit").textContent = st === 1 ? "day" : "days";
+    const isToday = day === todayKey();
+    const d = fromKey(day);
+    $("dayLabel").textContent = isToday ? "Today" : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    $("nextDay").disabled = isToday;
+    $("todayBtn").hidden = isToday;
+    // Bar: one segment per played game, coloured by tier
+    const res = state.results[day] || {};
+    $("bar").innerHTML = activeGames().map((g) => {
+      const s = scoreOf(g, res[g.id]); if (!s) return "";
+      return `<span title="${esc(g.name)}: ${s}" style="width:${(100 * s / Math.max(1, t.max)).toFixed(3)}%;background:${tierVar(g.tier)}"></span>`;
+    }).join("");
+  }
+
+  function renderGames() {
+    const res = state.results[day] || {};
+    const all = games();
+    const html = TIERS.concat(["X"]).map((tier) => {
+      const list = all.filter((g) => (TIERS.includes(g.tier) ? g.tier : "X") === tier).filter((g) => {
+        if (g.on === false) return filter === "all";
+        const done = !!res[g.id];
+        return filter === "all" || (filter === "done" ? done : !done);
+      });
+      if (!list.length) return "";
+      return `<section class="tier" aria-label="Tier ${tier}">
+        <div class="tier-tag" style="background:${tierVar(tier)}">${tier === "X" ? "+" : tier}</div>
+        <div class="tier-body">${list.map((g) => gameHtml(g, res[g.id])).join("")}</div></section>`;
+    }).join("");
+    $("tiers").innerHTML = html || `<p class="note" style="padding:24px 0">Nothing here. ${filter === "todo" ? "Every game is logged for this day." : "No games logged yet for this day."}</p>`;
+  }
+
+  function gameHtml(g, r) {
+    const t = TYPES[g.type] || TYPES.percent;
+    const s = scoreOf(g, r);
+    const off = g.on === false;
+    const pillCls = s === null ? "pill" : `pill done ${s >= 70 ? "hi" : s < 35 ? "lo" : ""}`;
+    const open = openPanels.has(g.id);
+    const typeOpts = Object.entries(TYPES).map(([k, v]) => `<option value="${k}"${k === g.type ? " selected" : ""}>${v.label}</option>`).join("");
+    return `<article class="game" data-id="${g.id}" style="${off ? "opacity:.5" : ""}">
+      <div class="ghead">
+        <div class="gname">${esc(g.name)} <span class="ghint">${off ? "hidden from total" : (r ? esc(t.show(r.v, g)) : esc(t.hint(g)))}</span></div>
+        <div class="gact">
+          <a class="play${g.url ? "" : " find"}" href="${esc(linkFor(g))}" target="_blank" rel="noopener noreferrer">${g.url ? "Play ↗" : "Find ↗"}</a>
+          <button class="${pillCls}" data-act="toggle" aria-expanded="${open}" aria-label="${s === null ? "Log result for " + esc(g.name) : "Edit result, " + s + " points"}">${s === null ? "Log" : s}</button>
+        </div>
+      </div>
+      <div class="panel" ${open ? "" : "hidden"}>
+        <label for="paste-${g.id}">Paste the share text
+          <textarea id="paste-${g.id}" placeholder="Paste what the game's Share button copies">${r && r.raw ? esc(r.raw) : ""}</textarea></label>
+        <div class="prow">
+          <label for="val-${g.id}">${esc(t.input)}${g.type === "win"
+            ? `<select id="val-${g.id}"><option value="">–</option><option value="1"${r && r.v === 1 ? " selected" : ""}>Solved</option><option value="0"${r && r.v === 0 ? " selected" : ""}>Failed</option></select>`
+            : `<input id="val-${g.id}" inputmode="${g.type === "guesses" ? "text" : "decimal"}" value="${r ? esc(r.v) : ""}" autocomplete="off">`}</label>
+          <button class="btn" data-act="save">Save</button>
+          ${r ? `<button class="btn warn" data-act="clear">Clear</button>` : ""}
+        </div>
+        <span class="note" id="note-${g.id}"></span>
+        <details class="cfg"><summary>Link &amp; scoring</summary>
+          <div class="prow">
+            <label for="url-${g.id}">Game link<input id="url-${g.id}" value="${esc(g.url || "")}" placeholder="https://…"></label>
+            <label for="type-${g.id}">Scoring<select id="type-${g.id}">${typeOpts}</select></label>
+            <label for="max-${g.id}">Limit / max / par<input id="max-${g.id}" inputmode="numeric" value="${esc(g.max)}"></label>
+            <label for="tier-${g.id}">Tier<select id="tier-${g.id}">${TIERS.map((x) => `<option${x === g.tier ? " selected" : ""}>${x}</option>`).join("")}</select></label>
+          </div>
+          <div class="prow" style="margin-top:8px">
+            <button class="btn sec" data-act="cfg">Save settings</button>
+            <button class="btn sec" data-act="onoff">${off ? "Count it again" : "Don't count this game"}</button>
+            ${g.custom ? `<button class="btn warn" data-act="remove">Remove game</button>` : ""}
+          </div>
+        </details>
+      </div>
+    </article>`;
+  }
+
+  function renderHistory() {
+    const W = 560, H = 170, padL = 30, padB = 22, padT = 16, n = 14;
+    const days = []; for (let i = n - 1; i >= 0; i--) days.push(addDays(todayKey(), -i));
+    const vals = days.map((k) => dayTotal(k));
+    const max = Math.max(100, ...vals.map((v) => v.max));
+    const bw = (W - padL - 8) / n;
+    const y = (v) => padT + (H - padT - padB) * (1 - v / max);
+    const ticks = [0, Math.round(max / 2), max];
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily totals for the last 14 days">`;
+    for (const t of ticks) svg += `<line x1="${padL}" x2="${W - 4}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" stroke-width="1"/><text x="${padL - 4}" y="${y(t) + 3}" text-anchor="end">${t}</text>`;
+    days.forEach((k, i) => {
+      const v = vals[i].total, x = padL + i * bw + 3, w = bw - 6;
+      const sel = k === day;
+      if (v > 0) svg += `<rect x="${x}" y="${y(v)}" width="${w}" height="${y(0) - y(v)}" rx="3" fill="${sel ? "var(--accent)" : "var(--muted)"}" opacity="${sel ? 1 : 0.55}"><title>${k}: ${v}</title></rect>`;
+      if (v > 0) svg += `<text x="${x + w / 2}" y="${y(v) - 4}" text-anchor="middle">${v}</text>`;
+      svg += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${fromKey(k).getDate()}</text>`;
+    });
+    $("hist").innerHTML = svg + "</svg>";
+
+    // Lifetime stats
+    const keys = Object.keys(state.results).filter((k) => dayTotal(k).played);
+    const totals = keys.map((k) => dayTotal(k).total);
+    const best = totals.length ? Math.max(...totals) : 0;
+    let bestDay = keys[totals.indexOf(best)];
+    const gameAvg = activeGames().map((g) => {
+      const ss = keys.map((k) => scoreOf(g, (state.results[k] || {})[g.id])).filter((s) => s !== null);
+      return { g, avg: ss.length ? ss.reduce((a, b) => a + b, 0) / ss.length : null, n: ss.length };
+    }).filter((x) => x.n >= 1).sort((a, b) => b.avg - a.avg);
+    const top = gameAvg[0];
+    $("stats").innerHTML = [
+      ["Days played", keys.length],
+      ["Best day", best ? `${best}` : "–", bestDay ? fromKey(bestDay).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""],
+      ["Average day", totals.length ? Math.round(totals.reduce((a, b) => a + b, 0) / totals.length) : "–"],
+      ["Strongest game", top ? esc(top.g.name) : "–", top ? `avg ${Math.round(top.avg)}` : ""],
+    ].map(([k, v, sub]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="note">${sub}</div>` : ""}</div>`).join("");
+  }
+
+  function render() { renderHeader(); renderGames(); renderHistory(); }
+
+  // ---------- Events ----------
+  $("tiers").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-act]"); if (!btn) return;
+    const el = btn.closest(".game"); const id = el.dataset.id;
+    const g = games().find((x) => x.id === id); const t = TYPES[g.type] || TYPES.percent;
+    const act = btn.dataset.act; const note = $("note-" + id);
+    if (act === "toggle") { openPanels.has(id) ? openPanels.delete(id) : openPanels.add(id); renderGames(); if (openPanels.has(id)) $("paste-" + id).focus(); return; }
+    if (act === "save") {
+      const raw = $("paste-" + id).value.trim(); const typed = $("val-" + id).value.trim();
+      let v = typed !== "" ? t.read(typed) : null;
+      if (v === null && raw) v = t.parse(raw, g);
+      if (v === null) { note.className = "note err"; note.textContent = raw ? "Couldn't read a score from that text. Type the result in the box instead." : "Paste the share text or type a result first."; return; }
+      if (g.type === "guesses" && v !== "X" && v > g.max) { note.className = "note err"; note.textContent = `That's more than ${g.max} guesses. Type X if you didn't get it.`; return; }
+      state.results[day] = state.results[day] || {};
+      state.results[day][id] = { v, raw, at: Date.now() };
+      openPanels.delete(id); save(); render(); return;
+    }
+    if (act === "clear") { if (state.results[day]) delete state.results[day][id]; save(); render(); return; }
+    if (act === "cfg") {
+      const url = $("url-" + id).value.trim(); const max = parseFloat($("max-" + id).value);
+      const patch = { url: /^https?:\/\//i.test(url) ? url : null, type: $("type-" + id).value, tier: $("tier-" + id).value, max: max > 0 ? max : g.max };
+      setGame(id, patch); save(); render(); const n2 = $("note-" + id); if (n2) { n2.className = "note ok"; n2.textContent = "Settings saved."; } return;
+    }
+    if (act === "onoff") { setGame(id, { on: g.on === false }); save(); render(); return; }
+    if (act === "remove") { state.custom = state.custom.filter((c) => c.id !== id); delete state.games[id]; save(); render(); return; }
+  });
+  function setGame(id, patch) {
+    const c = state.custom.find((x) => x.id === id);
+    if (c) Object.assign(c, patch); else state.games[id] = Object.assign({}, state.games[id] || {}, patch);
+  }
+  $("tiers").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.matches(".panel input")) { e.preventDefault(); e.target.closest(".panel").querySelector('[data-act="save"]').click(); }
+  });
+
+  document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
+    filter = b.dataset.filter;
+    document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    renderGames();
+  }));
+  $("prevDay").addEventListener("click", () => { day = addDays(day, -1); render(); });
+  $("nextDay").addEventListener("click", () => { if (day < todayKey()) { day = addDays(day, 1); render(); } });
+  $("todayBtn").addEventListener("click", () => { day = todayKey(); render(); });
+
+  $("addGameBtn").addEventListener("click", () => { $("addGame").hidden = !$("addGame").hidden; if (!$("addGame").hidden) $("newName").focus(); });
+  $("newCancel").addEventListener("click", () => { $("addGame").hidden = true; });
+  $("newSave").addEventListener("click", () => {
+    const name = $("newName").value.trim(); if (!name) { $("newName").focus(); return; }
+    const url = $("newUrl").value.trim();
+    state.custom.push({ id: "c" + Date.now().toString(36), name, tier: $("newTier").value, url: /^https?:\/\//i.test(url) ? url : null, type: "percent", max: 100, on: true, custom: true });
+    $("newName").value = ""; $("newUrl").value = ""; $("addGame").hidden = true; save(); render();
+  });
+
+  $("exportBtn").addEventListener("click", () => {
+    const text = JSON.stringify(state); $("dataBox").value = text;
+    const ok = () => { $("dataNote").className = "note ok"; $("dataNote").textContent = "Backup copied. Keep it somewhere safe, like a note."; };
+    try { navigator.clipboard.writeText(text).then(ok, () => { $("dataBox").select(); $("dataNote").textContent = "Select the text above and copy it."; }); }
+    catch (e) { $("dataBox").select(); $("dataNote").textContent = "Select the text above and copy it."; }
+  });
+  $("importBtn").addEventListener("click", () => {
+    try { const s = JSON.parse($("dataBox").value); if (!s || typeof s.results !== "object") throw 0;
+      state = { games: s.games || {}, custom: s.custom || [], results: s.results }; save(); render();
+      $("dataNote").className = "note ok"; $("dataNote").textContent = "Backup restored.";
+    } catch (e) { $("dataNote").className = "note err"; $("dataNote").textContent = "That isn't a backup from this page. Paste the full text you copied."; }
+  });
+  let resetArmed = false;
+  $("resetBtn").addEventListener("click", () => {
+    if (!resetArmed) { resetArmed = true; $("resetBtn").textContent = "Press again to erase all results"; setTimeout(() => { resetArmed = false; $("resetBtn").textContent = "Reset everything"; }, 4000); return; }
+    state = { games: {}, custom: [], results: {} }; save(); resetArmed = false; $("resetBtn").textContent = "Reset everything"; render();
+    $("dataNote").className = "note ok"; $("dataNote").textContent = "All results erased.";
+  });
+
+  // Roll over to the new day if the page stays open past midnight.
+  let lastToday = todayKey();
+  setInterval(() => { const t = todayKey(); if (t !== lastToday) { if (day === lastToday) day = t; lastToday = t; render(); } }, 60000);
+
+  render();
+})();
+</script>
